@@ -1,70 +1,48 @@
 # services/ddg_service.py
+from typing import List, Dict
+from contextlib import suppress
 
-import requests
-import logging
-from typing import List, Dict, Optional
+try:
+    from duckduckgo_search import DDGS
+except Exception as e:
+    raise RuntimeError("duckduckgo-search is not installed or failed to import") from e
 
-logger = logging.getLogger(__name__)
 
-DDG_URL = "https://api.duckduckgo.com/"  # ✅ Fixed - No trailing space
+def _normalize(item: Dict) -> Dict[str, str]:
+    # Different versions use different keys: title/body/href vs. title/snippet/link
+    title = item.get("title") or item.get("heading") or ""
+    snippet = item.get("body") or item.get("snippet") or item.get("abstract") or ""
+    link = item.get("href") or item.get("link") or item.get("url") or ""
+    return {"title": title, "snippet": snippet, "link": link}
 
-def search(
-    query: str,
-    max_results: int = 5,
-    safe: bool = True,
-    region: Optional[str] = None
-) -> List[Dict[str, str]]:
-    """
-    Query DuckDuckGo Instant Answer API.
-    Returns list of dicts: {title, snippet, url}
-    """
-    params = {
-        "q": query,
-        "format": "json",
-        "no_html": 1,
-        "skip_disambig": 1,
-        "safe": "on" if safe else "off",
-        "region": region or "wt-wt"
-    }
 
-    try:
-        r = requests.get(DDG_URL, params=params, timeout=8)
-        r.raise_for_status()
-        data = r.json()
-    except requests.RequestException as e:
-        logger.warning(f"[DDG] Request error: {e}")
-        return []
-    except Exception as e:
-        logger.warning(f"[DDG] Unexpected error: {e}")
-        return []
+def search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    results: List[Dict[str, str]] = []
+    with DDGS(timeout=10) as ddgs:
+        gen = None
 
-    results = []
+        # Newer signature (>=4.x): text(query, region=..., safesearch=..., timelimit=None, max_results=5)
+        with suppress(TypeError):
+            gen = ddgs.text(
+                query,
+                region="wt-wt",
+                safesearch="moderate",
+                timelimit=None,
+                max_results=max_results,
+            )
 
-    # 1. Abstract / Instant Answer
-    abstract = data.get("Abstract", "")
-    if abstract:
-        results.append({
-            "title": data.get("Heading", query),
-            "snippet": abstract,
-            "url": data.get("AbstractURL", "")
-        })
+        # Older signature (~3.9.x): text(query, k=5)
+        if gen is None:
+            with suppress(TypeError):
+                gen = ddgs.text(query, k=max_results)
 
-    # 2. Related Topics
-    for item in data.get("RelatedTopics", []):
-        if isinstance(item, dict) and item.get("FirstURL") and item.get("Text"):
-            text = item["Text"]
-            results.append({
-                "title": text.split(" - ")[0] if " - " in text else text[:60],
-                "snippet": text,
-                "url": item["FirstURL"]
-            })
+        # Fallback: try positional max_results
+        if gen is None:
+            gen = ddgs.text(query, max_results)  # noqa: E999 (older libs accept this)
 
-    # 3. Deduplicate by URL
-    seen, unique = set(), []
-    for item in results:
-        url = item["url"]
-        if url and url not in seen:
-            seen.add(url)
-            unique.append(item)
+        for item in gen:
+            results.append(_normalize(item))
+            if len(results) >= max_results:
+                break
 
-    return unique[:max_results]
+    return results
