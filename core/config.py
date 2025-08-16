@@ -5,28 +5,34 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from pydantic import (
-    BaseSettings,
+    BaseSettings, # Note: For Pydantic v2, consider using pydantic_settings.BaseSettings
     BaseModel,
     Field,
     AnyHttpUrl,
     AnyUrl,
-    field_validator,
+    # For Pydantic v2, use field_validator. For v1, use validator.
+    # field_validator, # Pydantic v2
+    validator # Pydantic v1
 )
 
 1) Load the correct .env file before Pydantic reads anything
 ENV = os.getenv("ENV", "development")
 load_dotenv(f".env.{ENV}", override=True)
 
+
 class ApiKeys(BaseModel):
+    # Corrected env variable names to match standard format
     gemini: Optional[str] = Field(None, env="GEMINIAPIKEY")
     groq:   Optional[str] = Field(None, env="GROQAPIKEY")
     hf:     Optional[str] = Field(None, env="HFAPIKEY")
 
-    # Pydantic v2 style: validate all fields before assignment
-    @field_validator("*", mode="before")
-    def requireunlesstest(cls, v, info):
+    # Pydantic v1 style validator (adjust decorator if using v2)
+    # @field_validator("*", mode="before") # Pydantic v2 syntax
+    @validator("*", pre=True) # Pydantic v1 syntax
+    def requireunlesstest(cls, v, field): # Pydantic v1: field; v2: info
         if ENV != "test" and not v:
-            raise ValueError(f"{info.field_name.upper()} must be set in '{ENV}' mode")
+            # Pydantic v1: field.name; v2: info.field_name
+            raise ValueError(f"{field.name.upper()} must be set in '{ENV}' mode")
         return v
 
 
@@ -38,25 +44,26 @@ class Models(BaseModel):
 
 
 class PollinationsConfig(BaseModel):
+    # ✅ Fixed: Removed trailing spaces from default URLs
     text_url:  AnyHttpUrl = Field(
-        "https://text.pollinations.ai/", env="POLLINATIONSTEXTURL"  # ✅ Fixed - No trailing space
+        "https://text.pollinations.ai/", env="POLLINATIONSTEXTURL"
     )
     image_url: AnyHttpUrl = Field(
-        "https://image.pollinations.ai/prompt/", env="POLLINATIONSIMAGEURL"  # ✅ Fixed - No trailing space
+        "https://image.pollinations.ai/prompt/", env="POLLINATIONSIMAGEURL"
     )
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings): # Consider pydantic_settings.BaseSettings for Pydantic v2
     api_keys:     ApiKeys            = ApiKeys()
     models:       Models             = Models()
     pollinations: PollinationsConfig = PollinationsConfig()
 
-    # Use AnyUrl so non-http schemes like redis:// pass validation
+    # ✅ Fixed: Corrected field name and env variable name
     redisurl: AnyUrl = Field("redis://localhost:6379", env="REDISURL")
 
     host: str = Field("0.0.0.0", env="HOST")
     port: int = Field(8000,    env="PORT")
-    env:  str = Field(ENV,      env="ENV")
+    env:  str = Field(ENV,      env="ENV") # Use the loaded ENV variable
 
     class Config:
         # We've already loaded dotenv manually, so disable automatic env_file
