@@ -6,6 +6,5 @@ redis==5.0.8
 requests==2.32.3
 google-generativeai==0.7.2
 groq==0.9.0
-huggingface-hub==0.24.7  # ✅ Added for HF service
-duckduckgo-search==0.9      # For ddg_service.py
-transformers==4.41.1          # If HF models are used directly
+huggingface-hub==0.24.7
+duckduckgo-search==3.9.11
