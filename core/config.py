@@ -5,45 +5,42 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from pydantic import (
-    BaseSettings,  # For Pydantic v1
     BaseModel,
     Field,
     AnyHttpUrl,
     AnyUrl,
-    validator  # Pydantic v1 validator
+    field_validator  # Pydantic v2
 )
+from pydantic_settings import BaseSettings  # ✅ New import for Pydantic v2
 
-# ✅ Load the correct .env file before Pydantic reads anything
+# Load the correct .env file before Pydantic reads anything
 ENV = os.getenv("ENV", "development")
 load_dotenv(f".env.{ENV}", override=True)
 
 
 class ApiKeys(BaseModel):
-    gemini: Optional[str] = Field(None, env="GEMINIAPIKEY")
-    groq:   Optional[str] = Field(None, env="GROQAPIKEY")
-    hf:     Optional[str] = Field(None, env="HFAPIKEY")
+    gemini: Optional[str] = Field(default=None, validation_alias="GEMINIAPIKEY")
+    groq:   Optional[str] = Field(default=None, validation_alias="GROQAPIKEY")
+    hf:     Optional[str] = Field(default=None, validation_alias="HFAPIKEY")
 
-    @validator("*", pre=True)
-    def require_unless_test(cls, v, field):
+    @field_validator("*", mode="before")
+    @classmethod
+    def require_unless_test(cls, v, info):
         if ENV != "test" and not v:
-            raise ValueError(f"{field.name.upper()} must be set in '{ENV}' mode")
+            raise ValueError(f"{info.field_name.upper()} must be set in '{ENV}' mode")
         return v
 
 
 class Models(BaseModel):
-    gemini:  str = Field("gemini-2.0-flash", env="GEMINI_MODEL")
-    groq:    str = Field("llama-3.3-70b-versatile", env="GROQ_MODEL")
-    hf:      str = Field("HuggingFaceH4/zephyr-7b-beta", env="HF_MODEL")
-    timeout: int = Field(30, env="HF_TIMEOUT")
+    gemini:  str = Field(default="gemini-2.0-flash", validation_alias="GEMINI_MODEL")
+    groq:    str = Field(default="llama-3.3-70b-versatile", validation_alias="GROQ_MODEL")
+    hf:      str = Field(default="HuggingFaceH4/zephyr-7b-beta", validation_alias="HF_MODEL")
+    timeout: int = Field(default=30, validation_alias="HF_TIMEOUT")
 
 
 class PollinationsConfig(BaseModel):
-    text_url:  AnyHttpUrl = Field(
-        "https://text.pollinations.ai/", env="POLLINATIONSTEXTURL"
-    )
-    image_url: AnyHttpUrl = Field(
-        "https://image.pollinations.ai/prompt/", env="POLLINATIONSIMAGEURL"
-    )
+    text_url:  AnyHttpUrl = Field(default="https://text.pollinations.ai/", validation_alias="POLLINATIONSTEXTURL")
+    image_url: AnyHttpUrl = Field(default="https://image.pollinations.ai/prompt/", validation_alias="POLLINATIONSIMAGEURL")
 
 
 class Settings(BaseSettings):
@@ -51,14 +48,15 @@ class Settings(BaseSettings):
     models:       Models             = Models()
     pollinations: PollinationsConfig = PollinationsConfig()
 
-    redisurl: AnyUrl = Field("redis://localhost:6379", env="REDISURL")
-    host:     str    = Field("0.0.0.0", env="HOST")
-    port:     int    = Field(8000, env="PORT")
-    env:      str    = Field(ENV, env="ENV")
+    redisurl: AnyUrl = Field(default="redis://localhost:6379", validation_alias="REDISURL")
+    host:     str    = Field(default="0.0.0.0", validation_alias="HOST")
+    port:     int    = Field(default=8000, validation_alias="PORT")
+    env:      str    = Field(default=ENV, validation_alias="ENV")
 
-    class Config:
-        env_file = None  # dotenv already loaded manually
-        case_sensitive = False
+    model_config = {
+        "case_sensitive": False,
+        "env_file": None  # dotenv already loaded manually
+    }
 
 
 settings = Settings()
